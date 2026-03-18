@@ -126,7 +126,7 @@ Copy `.env.example` to `.env` and adjust as needed.
 | `MAX_POSITION_USD` | Size in USD per position | `100` |
 | `EDGE_THRESHOLD` | Min edge to open: \|pUp5m - 0.5\| &gt; this (e.g. 0.03 → open if pUp5m &gt; 0.53 or &lt; 0.47) | `0.03` |
 
-**Startup:** The bot requires all four CLOB credentials; it exits if any are missing. Open positions are stored in `open-positions.json` (gitignored) to avoid double-opening; set `CLOSE_AFTER_SECONDS` to auto-close with a market sell.
+**Startup:** On launch the bot runs an **environment check** (`validateBotEnv`): valid `PRIVATE_KEY` (64 hex), real CLOB keys (not `.env.example` placeholders), sensible `LOOP_SECONDS` / `MAX_POSITION_USD` / `EDGE_THRESHOLD`, and valid API URLs. It exits with a clear error list if anything is wrong. The Compare UI (`npm run ui`) validates Gamma/OpenAI URLs only. Open positions live in `open-positions.json` (gitignored); set `CLOSE_AFTER_SECONDS` to auto-close with a market sell.
 
 ---
 
@@ -175,7 +175,8 @@ The bot **places real orders** when the signal is OPEN YES or OPEN NO:
 | Path | Role |
 |------|------|
 | `src/main.ts` | Entry point: loop every N seconds, fetch data → features → predict → place orders |
-| `src/config.ts` | Reads `.env`, exposes `cfg` (URLs, keys, `liveTradingEnabled`, `closeAfterSeconds`) |
+| `src/config.ts` | Reads `.env`, exposes `cfg` |
+| `src/envCheck.ts` | Startup validation for bot (`validateBotEnv`) and UI (`validateUiEnv`) |
 | `src/types/index.ts` | Shared types: `MarketTick`, `WhaleFlow`, `FeatureVector`, `Prediction`, `LivePosition`, etc. |
 | `src/connectors/polymarket.ts` | Gamma API (market resolution, YES price) + Data API (whale flow). `getConditionId()` for CLOB orders |
 | `src/connectors/orderExecution.ts` | CLOB client wrapper: `placeOrder`, `buy`, `sell`, `getTokenIdsForCondition` |

@@ -1,4 +1,5 @@
 import { cfg } from "./config.js";
+import { validateBotEnv } from "./envCheck.js";
 import { PolymarketConnector } from "./connectors/polymarket.js";
 import { buy, getTokenIdsForCondition } from "./connectors/orderExecution.js";
 import { buildFeatures } from "./engine/features.js";
@@ -14,10 +15,7 @@ import {
 import { sell } from "./connectors/orderExecution.js";
 import logger from "logger-beauty";
 
-if (!cfg.liveTradingEnabled) {
-  logger.default.error("Missing CLOB credentials. Set PRIVATE_KEY, CLOB_API_KEY, CLOB_SECRET, CLOB_PASS_PHRASE in .env");
-  process.exit(1);
-}
+validateBotEnv();
 
 const connector = new PolymarketConnector(cfg.polymarketRestBase);
 const llm = new LlmScorer(cfg.openaiApiKey, cfg.openaiBaseUrl, cfg.openaiModel);

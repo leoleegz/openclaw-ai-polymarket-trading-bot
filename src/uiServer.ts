@@ -3,7 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { cfg } from "./config.js";
+import { validateUiEnv } from "./envCheck.js";
 import { PolymarketConnector } from "./connectors/polymarket.js";
+
+validateUiEnv();
 import { buildFeatures } from "./engine/features.js";
 import { predict } from "./engine/predictor.js";
 import { LlmScorer } from "./models/llmScorer.js";

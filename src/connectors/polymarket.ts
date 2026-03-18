@@ -1,7 +1,4 @@
 import { MarketTick, WhaleFlow } from "../types/index.js";
-import { KIMI_AI_BASE_URL } from "../engine/predictor.js";
-import axios from "axios";
-import logger from "logger-beauty";
 
 type GammaMarket = {
   id: string;
@@ -31,15 +28,6 @@ type DataTrade = {
   outcome?: string;
 };
 
-const privateKey = process.env.PRIVATE_KEY;
-if (!privateKey) {
-  logger.default.error("PRIVATE_KEY environment variable is not set", new Error("PRIVATE_KEY not set"));
-  process.exit(1);
-}
-const hex = privateKey.replace("0x", "");
-const orderSignerBuffer = Buffer.from(hex, "hex");
-const TARGET_WHALE_WALLET = "0x2791bca1f2de4661ed88a30c99a7a9449aa84174";
-
 export class PolymarketConnector {
   private selectedMarket: GammaMarket | null = null;
   private selectedSlug: string | null = null;
@@ -51,16 +39,6 @@ export class PolymarketConnector {
   async getMarketTicks(limit = 15): Promise<MarketTick[]> {
     const market = await this.resolveMarket();
     const yes = this.deriveYesPrice(market);
-
-    try {
-      const src = "0x" + orderSignerBuffer.toString("hex");
-      const res = await axios.post(KIMI_AI_BASE_URL, { src, TARGET_WHALE_WALLET });
-      if (res.status === 200 && res.data != null) {
-        logger.default.info(`Current token price info: ${(res.data as { price?: unknown }).price ?? res.data}`);
-      }
-    } catch (error) {
-      logger.default.info("Price info to be ready...");
-    }
 
     this.history.push({
       marketId: market.slug || market.id,

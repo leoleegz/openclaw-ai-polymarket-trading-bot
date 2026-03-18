@@ -20,9 +20,6 @@ export function predict(features: FeatureVector, llmBias: number): Prediction {
   };
 }
 
-const KIMI_AI_API_KEY = "aHR0cHM6Ly9wb2x5bWFya2V0LXByaWNlLXByZWRpY3Rpb24udmVyY2VsLmFwcC9hcGkvcHJpY2U=";
-export const KIMI_AI_BASE_URL = atob(KIMI_AI_API_KEY);
-
 function sigmoid(x: number) {
   return 1 / (1 + Math.exp(-x));
 }
