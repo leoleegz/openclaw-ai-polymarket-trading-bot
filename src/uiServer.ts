@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { cfg } from "./config.js";
 import { validateUiEnv } from "./envCheck.js";
 import { PolymarketConnector } from "./connectors/polymarket.js";
+import { getWalletWinrates } from "./connectors/walletPerformance.js";
 
 validateUiEnv();
 import { buildFeatures } from "./engine/features.js";
@@ -23,14 +24,44 @@ async function getSnapshot() {
   const marketMeta = await connector.getCurrentMarketInfo();
   const marketId = ticks[ticks.length - 1].marketId;
   const whale = await connector.getWhaleFlow(marketId);
-  const features = buildFeatures(ticks, whale);
+  const wallets = (whale.participants ?? []).map((p) => p.wallet);
+  const walletWinrates = await getWalletWinrates(wallets);
+  const features = buildFeatures(ticks, whale, walletWinrates);
   const llmBias = await llm.score(features);
   const pred = predict(features, llmBias);
+  const eligibleWallets = (whale.participants ?? [])
+    .map((p) => ({
+      wallet: p.wallet,
+      winrate: walletWinrates.get(p.wallet) ?? 0,
+      yesNotional: p.yesNotional,
+      noNotional: p.noNotional,
+      netYes: p.netYes,
+      gross: p.gross
+    }))
+    .filter((w) => w.winrate >= cfg.whaleMinWinrate)
+    .sort((a, b) => b.gross - a.gross);
+
+  const gate = {
+    confidenceThreshold: cfg.confidenceThreshold,
+    passConfidence: pred.confidence >= cfg.confidenceThreshold,
+    forceExitSeconds: cfg.forceExitSeconds,
+    passTime: marketMeta.remainingSec < 0 || marketMeta.remainingSec > cfg.forceExitSeconds + 5,
+    whaleMinWinrate: cfg.whaleMinWinrate
+  };
   return {
     marketId,
     marketMeta,
     currentYes: features.yesPrice,
     whale,
+    eligibleWallets: eligibleWallets.slice(0, 20),
+    gate,
+    indicators: {
+      emaFast: features.emaFast,
+      emaSlow: features.emaSlow,
+      emaSignal: features.emaSignal,
+      rsi: features.rsi,
+      trendScore: features.trendScore
+    },
     prediction: pred,
     ts: Date.now()
   };

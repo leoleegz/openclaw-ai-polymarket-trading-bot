@@ -1,21 +1,26 @@
 import { FeatureVector, Prediction } from "../types/index.js";
 
 export function predict(features: FeatureVector, llmBias: number): Prediction {
+  const whaleNet = features.winrateWhaleYesPressure - features.winrateWhaleNoPressure;
+  const whaleSignal = features.winrateWhaleGross > 0 ? whaleNet / features.winrateWhaleGross : 0;
+  const whaleIntensity = Math.min(1, features.winrateWhaleGross / 10000);
   const z =
-    3.2 * features.returns30s +
-    1.8 * features.returns2m +
-    1.4 * features.whaleBias * features.whaleIntensity -
-    2.2 * features.vol2m +
+    2.2 * features.trendScore +
+    2.8 * whaleSignal * whaleIntensity +
     0.8 * llmBias;
 
   const p5m = sigmoid(z);
   const confidence = Math.min(0.99, Math.abs(p5m - 0.5) * 2);
+  const side = p5m >= 0.5 ? "YES" : "NO";
 
   return {
     marketId: features.marketId,
     pUp5m: p5m,
     confidence,
-    reason: `r30=${features.returns30s.toFixed(4)} r2m=${features.returns2m.toFixed(4)} whale=${features.whaleBias.toFixed(2)} llm=${llmBias.toFixed(2)}`,
+    side,
+    reason:
+      `trend=${features.trendScore.toFixed(3)} emaSig=${features.emaSignal.toFixed(3)} ` +
+      `rsi=${features.rsi.toFixed(1)} whale=${whaleSignal.toFixed(3)} count=${features.winrateWhaleCount} llm=${llmBias.toFixed(2)}`,
     ts: Date.now()
   };
 }

@@ -1,4 +1,5 @@
 import { MarketTick, WhaleFlow } from "../types/index.js";
+import { cfg } from "../config.js";
 
 type GammaMarket = {
   id: string;
@@ -56,7 +57,7 @@ export class PolymarketConnector {
     const trades = await this.fetchRecentTrades(400);
     const marketTrades = trades.filter((t) => (t.eventSlug || t.slug) === slug);
 
-    const byWallet = new Map<string, { netYes: number; gross: number }>();
+    const byWallet = new Map<string, { yesNotional: number; noNotional: number; gross: number; joinedAt: number }>();
 
     for (const t of marketTrades) {
       const wallet = (t.proxyWallet || "anon").toLowerCase();
@@ -67,35 +68,44 @@ export class PolymarketConnector {
       const side = (t.side || "BUY").toUpperCase();
       const isYesOutcome = outcome === "up" || outcome === "yes";
 
-      let signed = 0;
-      if (isYesOutcome) signed = side === "BUY" ? notional : -notional;
-      else signed = side === "BUY" ? -notional : notional;
-
-      const prev = byWallet.get(wallet) || { netYes: 0, gross: 0 };
-      prev.netYes += signed;
+      const prev = byWallet.get(wallet) || { yesNotional: 0, noNotional: 0, gross: 0, joinedAt: Number(t.timestamp ?? Date.now()) };
+      const yesSigned = isYesOutcome ? (side === "BUY" ? notional : -notional) : (side === "BUY" ? -notional : notional);
+      if (yesSigned >= 0) prev.yesNotional += yesSigned;
+      else prev.noNotional += Math.abs(yesSigned);
       prev.gross += notional;
+      prev.joinedAt = Math.min(prev.joinedAt, Number(t.timestamp ?? Date.now()));
       byWallet.set(wallet, prev);
     }
 
-    const whales = [...byWallet.entries()]
+    const participants = [...byWallet.entries()]
       .map(([wallet, w]) => ({ wallet, ...w }))
-      .filter((w) => w.gross >= 200)
+      .filter((w) => w.gross >= cfg.whaleMinNotional)
       .sort((a, b) => b.gross - a.gross);
 
-    
-
-    const netYesNotional = whales.reduce((s, w) => s + w.netYes, 0);
-    const grossNotional = whales.reduce((s, w) => s + w.gross, 0);
+    const yesNotional = participants.reduce((s, w) => s + w.yesNotional, 0);
+    const noNotional = participants.reduce((s, w) => s + w.noNotional, 0);
+    const netYesNotional = yesNotional - noNotional;
+    const grossNotional = participants.reduce((s, w) => s + w.gross, 0);
 
     return {
       marketId,
       netYesNotional,
       grossNotional,
+      yesNotional,
+      noNotional,
       tradeCount: marketTrades.length,
       ts: Date.now(),
-      topWallets: whales.slice(0, 8).map((w) => ({
+      participants: participants.slice(0, 30).map((w) => ({
         wallet: w.wallet,
-        netYes: w.netYes,
+        yesNotional: w.yesNotional,
+        noNotional: w.noNotional,
+        netYes: w.yesNotional - w.noNotional,
+        gross: w.gross,
+        joinedAt: w.joinedAt
+      })),
+      topWallets: participants.slice(0, 8).map((w) => ({
+        wallet: w.wallet,
+        netYes: w.yesNotional - w.noNotional,
         gross: w.gross
       }))
     };

@@ -36,41 +36,32 @@
       <section class="panel panel--hero">
         <div class="panel__head">
           <h2 class="panel__title">Live snapshot</h2>
-          <span class="panel__hint">Gamma + model</span>
+          <span class="panel__hint">Winrate whale + EMA/RSI model</span>
         </div>
         <div id="snapshot" class="stat-grid"></div>
       </section>
 
       <section class="panel">
         <div class="panel__head">
-          <h2 class="panel__title">Auto compare</h2>
-          <span class="panel__hint">Schedule a settle check</span>
+          <h2 class="panel__title">Indicator + Gate</h2>
+          <span class="panel__hint">Entry decision components</span>
         </div>
-        <div class="auto-form">
-          <div class="field">
-            <label class="field__label" for="entryYes">Entry YES price</label>
-            <input id="entryYes" class="field__input" type="number" min="0" max="1" step="0.0001" placeholder="0.52" />
-          </div>
-          <div class="field">
-            <label class="field__label" for="delaySec">Settle after (sec)</label>
-            <input id="delaySec" class="field__input" type="number" min="10" step="1" value="300" />
-          </div>
-          <button type="button" id="startAuto" class="btn btn--accent btn--block">Start auto compare</button>
+        <div id="indicatorStats" class="stat-grid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel__head">
+          <h2 class="panel__title">Execution policy (live)</h2>
+          <span class="panel__hint">Auto-trading gate rules</span>
         </div>
-        <div class="pending-bar" id="pendingWrap" hidden>
-          <div class="pending-bar__track">
-            <div class="pending-bar__fill" id="pendingFill"></div>
-          </div>
-          <p class="pending-bar__text" id="pendingInfo">No pending run.</p>
-        </div>
-        <p class="pending-idle muted" id="pendingIdle">No pending auto-compare.</p>
+        <div id="policyInfo" class="stat-grid"></div>
       </section>
 
       <div class="two-col">
         <section class="panel panel--whale">
           <div class="panel__head">
-            <h2 class="panel__title">Whale flow</h2>
-            <span class="panel__hint">Live sample</span>
+            <h2 class="panel__title">Whale wallets (winrate-filtered)</h2>
+            <span class="panel__hint">Only winrate >= threshold</span>
           </div>
           <div id="whaleStats" class="whale-summary muted">No whale data yet.</div>
           <div class="table-wrap">
@@ -78,6 +69,9 @@
               <thead>
                 <tr>
                   <th>Wallet</th>
+                  <th>Winrate</th>
+                  <th>YES</th>
+                  <th>NO</th>
                   <th>Net YES</th>
                   <th>Gross</th>
                   <th>Bias</th>
@@ -111,8 +105,8 @@
 
       <section class="panel panel--history">
         <div class="panel__head">
-          <h2 class="panel__title">History</h2>
-          <span class="panel__hint">Stored locally</span>
+          <h2 class="panel__title">Prediction feed</h2>
+          <span class="panel__hint">Recent snapshots (local)</span>
         </div>
         <div class="table-wrap table-wrap--scroll">
           <table class="data-table data-table--history">
@@ -121,10 +115,9 @@
                 <th>Time</th>
                 <th>Market</th>
                 <th>Pred</th>
-                <th>Entry</th>
-                <th>Exit</th>
-                <th>Actual</th>
-                <th>Result</th>
+                <th>P(UP)</th>
+                <th>Conf</th>
+                <th>Gate</th>
               </tr>
             </thead>
             <tbody id="history"></tbody>

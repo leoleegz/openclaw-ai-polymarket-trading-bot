@@ -1,26 +1,20 @@
-let lastSnapshot = null;
 let marketRemainingSec = null;
-
 const RING_C = 2 * Math.PI * 42;
+const FEED_LIMIT = 120;
 
 const statusEl = document.getElementById("status");
 const refreshBtn = document.getElementById("refresh");
 const snapshotEl = document.getElementById("snapshot");
+const indicatorStatsEl = document.getElementById("indicatorStats");
+const policyInfoEl = document.getElementById("policyInfo");
 const historyEl = document.getElementById("history");
 const statsEl = document.getElementById("stats");
 const accuracyValueEl = document.getElementById("accuracyValue");
 const accuracyArcEl = document.getElementById("accuracyArc");
 const whaleStatsEl = document.getElementById("whaleStats");
 const whalesEl = document.getElementById("whales");
-const entryEl = document.getElementById("entryYes");
-const delayEl = document.getElementById("delaySec");
-const pendingWrap = document.getElementById("pendingWrap");
-const pendingIdle = document.getElementById("pendingIdle");
-const pendingInfoEl = document.getElementById("pendingInfo");
-const pendingFill = document.getElementById("pendingFill");
 
-const history = JSON.parse(localStorage.getItem("pm_compare_history") || "[]");
-let pending = JSON.parse(localStorage.getItem("pm_compare_pending") || "null");
+const feed = JSON.parse(localStorage.getItem("pm_prediction_feed") || "[]");
 
 function sideFromProb(p) {
   return p >= 0.5 ? "YES" : "NO";
@@ -41,6 +35,12 @@ function badge(side) {
   return `<span class="badge badge--neutral">${side}</span>`;
 }
 
+function gateBadge(pass) {
+  return pass
+    ? '<span class="badge badge--yes">ENTER</span>'
+    : '<span class="badge badge--neutral">HOLD</span>';
+}
+
 function setStatus(loading) {
   if (loading) {
     statusEl.textContent = "Loading";
@@ -58,16 +58,15 @@ async function refreshPrediction() {
   try {
     const res = await fetch("/api/prediction");
     const data = await res.json();
-    lastSnapshot = data;
-
     const p5 = data.prediction.pUp5m;
-    const side = sideFromProb(p5);
+    const side = data.prediction.side || sideFromProb(p5);
     const sideClass = side === "YES" ? "stat-tile__value--yes" : "stat-tile__value--no";
 
     const meta = data.marketMeta || {};
     const remain = Number(meta.remainingSec ?? -1);
     marketRemainingSec = remain >= 0 ? remain : null;
     const remainText = remain >= 0 ? fmtCountdown(remain) : "—";
+    const gatePass = Boolean(data.gate?.passConfidence && data.gate?.passTime);
 
     snapshotEl.innerHTML = `
       <div class="stat-tile stat-tile--wide">
@@ -91,6 +90,12 @@ async function refreshPrediction() {
         <div class="stat-tile__value">${fmt(data.prediction.confidence, 2)}</div>
       </div>
       <div class="stat-tile">
+        <div class="stat-tile__label">Gate</div>
+        <div class="stat-tile__value ${data.gate?.passConfidence && data.gate?.passTime ? "stat-tile__value--yes" : "stat-tile__value--no"}">
+          ${gatePass ? "ENTER" : "HOLD"}
+        </div>
+      </div>
+      <div class="stat-tile">
         <div class="stat-tile__label">Slug</div>
         <div class="stat-tile__value" style="font-size:0.75rem">${escapeHtml(meta.slug || "—")}</div>
       </div>
@@ -104,20 +109,47 @@ async function refreshPrediction() {
       </div>
     `;
 
-    const whale = data.whale || {};
-    whaleStatsEl.textContent = `Net YES $${fmt(whale.netYesNotional || 0, 2)} · Gross $${fmt(whale.grossNotional || 0, 2)} · ${whale.tradeCount || 0} trades`;
-    const wallets = whale.topWallets || [];
+    const indicators = data.indicators || {};
+    indicatorStatsEl.innerHTML = `
+      <div class="stat-tile"><div class="stat-tile__label">EMA Fast</div><div class="stat-tile__value">${fmt(indicators.emaFast || 0, 4)}</div></div>
+      <div class="stat-tile"><div class="stat-tile__label">EMA Slow</div><div class="stat-tile__value">${fmt(indicators.emaSlow || 0, 4)}</div></div>
+      <div class="stat-tile"><div class="stat-tile__label">EMA Signal</div><div class="stat-tile__value">${fmt(indicators.emaSignal || 0, 4)}</div></div>
+      <div class="stat-tile"><div class="stat-tile__label">RSI</div><div class="stat-tile__value">${fmt(indicators.rsi || 0, 1)}</div></div>
+      <div class="stat-tile"><div class="stat-tile__label">Trend Score</div><div class="stat-tile__value">${fmt(indicators.trendScore || 0, 3)}</div></div>
+      <div class="stat-tile stat-tile--wide"><div class="stat-tile__label">Entry Gate</div><div class="stat-tile__value">${data.gate?.passConfidence ? "Confidence pass" : "Confidence fail"} | ${data.gate?.passTime ? "Time pass" : "Time fail"} | threshold=${fmt(data.gate?.confidenceThreshold || 0.8,2)}</div></div>
+    `;
+    policyInfoEl.innerHTML = `
+      <div class="stat-tile"><div class="stat-tile__label">Confidence threshold</div><div class="stat-tile__value">${fmt(data.gate?.confidenceThreshold || 0.8, 2)}</div></div>
+      <div class="stat-tile"><div class="stat-tile__label">Min whale winrate</div><div class="stat-tile__value">${((data.gate?.whaleMinWinrate || 0.7) * 100).toFixed(0)}%</div></div>
+      <div class="stat-tile"><div class="stat-tile__label">Force exit</div><div class="stat-tile__value">${data.gate?.forceExitSeconds ?? 3}s before expiry</div></div>
+      <div class="stat-tile"><div class="stat-tile__label">Current gate status</div><div class="stat-tile__value ${gatePass ? "stat-tile__value--yes" : "stat-tile__value--no"}">${gatePass ? "ALLOW ENTER" : "HOLD"}</div></div>
+    `;
+
+    const thresholdPct = ((data.gate?.confidenceThreshold ?? 0.8) * 100).toFixed(0);
+    const whaleMinWr = ((data.gate?.whaleMinWinrate ?? 0.7) * 100).toFixed(0);
+    whaleStatsEl.textContent = `Filtered wallets: ${data.eligibleWallets?.length || 0} · Min winrate ${whaleMinWr}% · Confidence gate ${thresholdPct}% · Remaining ${remainText}`;
+    const wallets = data.eligibleWallets || [];
     whalesEl.innerHTML =
       wallets
         .map((w) => {
           const bias = w.netYes > 0 ? "YES" : w.netYes < 0 ? "NO" : "—";
           const b = bias === "YES" ? "badge--yes" : bias === "NO" ? "badge--no" : "badge--neutral";
-          return `<tr><td>${w.wallet.slice(0, 6)}…${w.wallet.slice(-4)}</td><td>$${fmt(w.netYes, 2)}</td><td>$${fmt(w.gross, 2)}</td><td><span class="badge ${b}">${bias}</span></td></tr>`;
+          return `<tr><td>${w.wallet.slice(0, 6)}…${w.wallet.slice(-4)}</td><td>${(100 * (w.winrate || 0)).toFixed(1)}%</td><td>$${fmt(w.yesNotional, 2)}</td><td>$${fmt(w.noNotional, 2)}</td><td>$${fmt(w.netYes, 2)}</td><td>$${fmt(w.gross, 2)}</td><td><span class="badge ${b}">${bias}</span></td></tr>`;
         })
         .join("") ||
-      '<tr><td colspan="4" class="empty-cell">No whale wallets in this sample.</td></tr>';
+      '<tr><td colspan="7" class="empty-cell">No qualifying wallets for current sample.</td></tr>';
 
-    entryEl.value = fmt(data.currentYes);
+    feed.push({
+      ts: Date.now(),
+      marketId: data.marketId,
+      side,
+      pUp: p5,
+      conf: data.prediction.confidence,
+      gatePass
+    });
+    if (feed.length > FEED_LIMIT) feed.splice(0, feed.length - FEED_LIMIT);
+    localStorage.setItem("pm_prediction_feed", JSON.stringify(feed));
+    renderHistory();
   } finally {
     setStatus(false);
   }
@@ -130,110 +162,37 @@ function escapeHtml(s) {
 }
 
 function renderHistory() {
-  const total = history.length;
+  const total = feed.length;
   historyEl.innerHTML = total
-    ? history
+    ? feed
         .slice()
         .reverse()
         .map(
           (x) => `
-    <tr class="${x.correct ? "row--win" : "row--lose"}">
+    <tr class="${x.gatePass ? "row--win" : "row--lose"}">
       <td>${new Date(x.ts).toLocaleString()}</td>
       <td>${escapeHtml(String(x.marketId))}</td>
-      <td>${badge(x.predSide)}</td>
-      <td>${fmt(x.entryYes)}</td>
-      <td>${fmt(x.exitYes)}</td>
-      <td>${badge(x.actualSide)}</td>
-      <td>${x.correct ? "✓ Hit" : "✗ Miss"}</td>
+      <td>${badge(x.side)}</td>
+      <td>${fmt(x.pUp, 3)}</td>
+      <td>${fmt(x.conf, 2)}</td>
+      <td>${gateBadge(x.gatePass)}</td>
     </tr>
   `
         )
         .join("")
-    : '<tr><td colspan="7" class="empty-cell">No compares yet — run <strong>Auto compare</strong> after fetching a prediction.</td></tr>';
-  const win = history.filter((x) => x.correct).length;
-  const acc = total ? (win / total) * 100 : 0;
+    : '<tr><td colspan="6" class="empty-cell">No predictions yet. Click <strong>Get prediction</strong>.</td></tr>';
+  const enterReady = feed.filter((x) => x.gatePass).length;
+  const rate = total ? (enterReady / total) * 100 : 0;
 
   if (accuracyArcEl) {
     accuracyArcEl.style.strokeDasharray = String(RING_C);
-    accuracyArcEl.style.strokeDashoffset = total ? String(RING_C * (1 - acc / 100)) : String(RING_C);
+    accuracyArcEl.style.strokeDashoffset = total ? String(RING_C * (1 - rate / 100)) : String(RING_C);
   }
-  accuracyValueEl.textContent = total ? `${acc.toFixed(1)}%` : "—";
-  statsEl.innerHTML = `<strong style="color:var(--text)">${total}</strong> runs · <strong style="color:var(--success)">${win}</strong> correct`;
+  accuracyValueEl.textContent = total ? `${rate.toFixed(1)}%` : "—";
+  statsEl.innerHTML = `<strong style="color:var(--text)">${total}</strong> snapshots · <strong style="color:var(--success)">${enterReady}</strong> enter-ready`;
 }
 
 document.getElementById("refresh").addEventListener("click", () => refreshPrediction().catch(console.error));
-
-document.getElementById("startAuto").addEventListener("click", () => {
-  if (!lastSnapshot) return alert("Get prediction first");
-  if (pending) return alert("An auto-compare is already pending");
-
-  const entryYes = Number(entryEl.value);
-  const delaySec = Number(delayEl.value || 300);
-  if (Number.isNaN(entryYes) || entryYes <= 0 || entryYes >= 1) return alert("Invalid entry YES price");
-  if (Number.isNaN(delaySec) || delaySec < 10) return alert("Delay must be at least 10 seconds");
-
-  pending = {
-    marketId: lastSnapshot.marketId,
-    predSide: sideFromProb(lastSnapshot.prediction.pUp5m),
-    entryYes,
-    startedAt: Date.now(),
-    settleAt: Date.now() + delaySec * 1000
-  };
-  localStorage.setItem("pm_compare_pending", JSON.stringify(pending));
-  renderPending();
-});
-
-async function settlePendingIfReady() {
-  if (!pending) return;
-  if (Date.now() < pending.settleAt) {
-    renderPending();
-    return;
-  }
-
-  try {
-    const res = await fetch("/api/prediction");
-    const data = await res.json();
-    const exitYes = Number(data.currentYes);
-
-    const actualSide = exitYes >= pending.entryYes ? "YES" : "NO";
-    const row = {
-      ts: Date.now(),
-      marketId: pending.marketId,
-      predSide: pending.predSide,
-      actualSide,
-      entryYes: pending.entryYes,
-      exitYes,
-      correct: pending.predSide === actualSide
-    };
-
-    history.push(row);
-    localStorage.setItem("pm_compare_history", JSON.stringify(history));
-    pending = null;
-    localStorage.removeItem("pm_compare_pending");
-    renderHistory();
-    renderPending();
-    await refreshPrediction();
-  } catch (e) {
-    console.error("auto settle error", e);
-  }
-}
-
-function renderPending() {
-  if (!pending) {
-    pendingWrap.hidden = true;
-    pendingIdle.hidden = false;
-    pendingIdle.textContent = "No pending auto-compare.";
-    pendingFill.style.width = "0%";
-    return;
-  }
-  pendingWrap.hidden = false;
-  pendingIdle.hidden = true;
-  const totalSec = Math.max(1, (pending.settleAt - pending.startedAt) / 1000);
-  const left = Math.max(0, Math.ceil((pending.settleAt - Date.now()) / 1000));
-  const pct = Math.min(100, ((totalSec - left) / totalSec) * 100);
-  pendingFill.style.width = `${pct}%`;
-  pendingInfoEl.textContent = `${escapeHtml(pending.marketId)} · Pred ${pending.predSide} · Entry ${fmt(pending.entryYes)} · ${left}s left`;
-}
 
 function tickMarketTimer() {
   if (marketRemainingSec == null) return;
@@ -247,8 +206,5 @@ function tickMarketTimer() {
 }
 
 renderHistory();
-renderPending();
 refreshPrediction().catch(console.error);
-setInterval(settlePendingIfReady, 3000);
-setInterval(renderPending, 1000);
 setInterval(tickMarketTimer, 1000);

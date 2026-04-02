@@ -1,5 +1,4 @@
 import { cfg } from "./config.js";
-import logger from "logger-beauty";
 
 const PLACEHOLDER_VALUES = new Set([
   "your_private_key",
@@ -37,18 +36,15 @@ export function validateBotEnv(): void {
   else if (!validPrivateKey(pk)) errors.push("PRIVATE_KEY must be 64 hex chars (optional 0x prefix).");
   else if (isPlaceholder(pk)) errors.push("PRIVATE_KEY is still the example placeholder — set your real key.");
 
-  if (!key) errors.push("CLOB_API_KEY is missing.");
-  else if (isPlaceholder(key)) errors.push("CLOB_API_KEY is still a placeholder.");
-
-  if (!secret) errors.push("CLOB_SECRET is missing.");
-  else if (isPlaceholder(secret)) errors.push("CLOB_SECRET is still a placeholder.");
-
-  if (!pass) errors.push("CLOB_PASS_PHRASE is missing.");
-  else if (isPlaceholder(pass)) errors.push("CLOB_PASS_PHRASE is still a placeholder.");
-
-  const setCount = [key, secret, pass].filter(Boolean).length;
-  if (setCount > 0 && setCount < 3) {
-    errors.push("Set all three: CLOB_API_KEY, CLOB_SECRET, CLOB_PASS_PHRASE.");
+  const clobSet = [key, secret, pass].filter(Boolean).length;
+  if (clobSet === 0) {
+    // OK — CLOB creds will be created or derived at runtime via createOrDeriveApiKey()
+  } else if (clobSet < 3) {
+    errors.push("Either omit CLOB_API_KEY, CLOB_SECRET, CLOB_PASS_PHRASE (auto-derive) or set all three.");
+  } else {
+    if (isPlaceholder(key)) errors.push("CLOB_API_KEY is still a placeholder.");
+    if (isPlaceholder(secret)) errors.push("CLOB_SECRET is still a placeholder.");
+    if (isPlaceholder(pass)) errors.push("CLOB_PASS_PHRASE is still a placeholder.");
   }
 
   if (!validHttpUrl(cfg.polymarketRestBase)) {
@@ -67,6 +63,36 @@ export function validateBotEnv(): void {
   if (!Number.isFinite(cfg.edgeThreshold) || cfg.edgeThreshold <= 0 || cfg.edgeThreshold >= 0.5) {
     errors.push(`EDGE_THRESHOLD must be between 0 and 0.5 (got ${cfg.edgeThreshold}).`);
   }
+  if (!Number.isFinite(cfg.confidenceThreshold) || cfg.confidenceThreshold <= 0 || cfg.confidenceThreshold > 1) {
+    errors.push(`CONFIDENCE_THRESHOLD must be in (0, 1] (got ${cfg.confidenceThreshold}).`);
+  }
+  if (!Number.isFinite(cfg.forceExitSeconds) || cfg.forceExitSeconds < 1 || cfg.forceExitSeconds >= 120) {
+    errors.push(`FORCE_EXIT_SECONDS must be in [1, 119] (got ${cfg.forceExitSeconds}).`);
+  }
+  if (!Number.isFinite(cfg.emaFast) || !Number.isInteger(cfg.emaFast) || cfg.emaFast < 2 || cfg.emaFast > 100) {
+    errors.push(`EMA_FAST must be an integer in [2, 100] (got ${cfg.emaFast}).`);
+  }
+  if (!Number.isFinite(cfg.emaSlow) || !Number.isInteger(cfg.emaSlow) || cfg.emaSlow < 3 || cfg.emaSlow > 200) {
+    errors.push(`EMA_SLOW must be an integer in [3, 200] (got ${cfg.emaSlow}).`);
+  }
+  if (cfg.emaFast >= cfg.emaSlow) {
+    errors.push(`EMA_FAST must be smaller than EMA_SLOW (got ${cfg.emaFast} >= ${cfg.emaSlow}).`);
+  }
+  if (!Number.isFinite(cfg.rsiPeriod) || !Number.isInteger(cfg.rsiPeriod) || cfg.rsiPeriod < 2 || cfg.rsiPeriod > 100) {
+    errors.push(`RSI_PERIOD must be an integer in [2, 100] (got ${cfg.rsiPeriod}).`);
+  }
+  if (!Number.isFinite(cfg.whaleMinWinrate) || cfg.whaleMinWinrate <= 0 || cfg.whaleMinWinrate > 1) {
+    errors.push(`WHALE_MIN_WINRATE must be in (0, 1] (got ${cfg.whaleMinWinrate}).`);
+  }
+  if (!Number.isFinite(cfg.whaleMinNotional) || cfg.whaleMinNotional < 0) {
+    errors.push(`WHALE_MIN_NOTIONAL must be >= 0 (got ${cfg.whaleMinNotional}).`);
+  }
+  if (!Number.isFinite(cfg.walletWinrateTimeoutMs) || cfg.walletWinrateTimeoutMs < 500 || cfg.walletWinrateTimeoutMs > 20000) {
+    errors.push(`WALLET_WINRATE_TIMEOUT_MS must be in [500, 20000] (got ${cfg.walletWinrateTimeoutMs}).`);
+  }
+  if (!Number.isFinite(cfg.walletWinrateCacheTtlSec) || cfg.walletWinrateCacheTtlSec < 10 || cfg.walletWinrateCacheTtlSec > 86400) {
+    errors.push(`WALLET_WINRATE_CACHE_TTL_SEC must be in [10, 86400] (got ${cfg.walletWinrateCacheTtlSec}).`);
+  }
   if (!Number.isFinite(cfg.clobChainId) || !Number.isInteger(cfg.clobChainId) || cfg.clobChainId < 1) {
     errors.push(`CLOB_CHAIN_ID must be a positive integer (got ${cfg.clobChainId}).`);
   }
@@ -78,19 +104,22 @@ export function validateBotEnv(): void {
   if (openaiKey && !validHttpUrl(cfg.openaiBaseUrl)) {
     errors.push("OPENAI_BASE_URL must be a valid http(s) URL when OPENAI_API_KEY is set.");
   }
+  if (cfg.walletWinrateApiUrl.trim() && !validHttpUrl(cfg.walletWinrateApiUrl)) {
+    errors.push("WALLET_WINRATE_API_URL must be a valid http(s) URL.");
+  }
 
   if (errors.length) {
-    logger.default.error(
+    console.error(
       "Environment check failed. Fix .env and try again:\n\n  • " + errors.join("\n  • ")
     );
     process.exit(1);
   }
 
   if (cfg.clobChainId !== 137) {
-    logger.default.warn(`CLOB_CHAIN_ID is ${cfg.clobChainId} (Polymarket mainnet is usually 137).`);
+    console.warn(`CLOB_CHAIN_ID is ${cfg.clobChainId} (Polymarket mainnet is usually 137).`);
   }
 
-  logger.default.info("Environment OK — starting bot.");
+  console.log("Environment OK — starting bot.");
 }
 
 export function validateUiEnv(): void {
@@ -106,7 +135,7 @@ export function validateUiEnv(): void {
   }
 
   if (errors.length) {
-    logger.default.error("UI environment check failed:\n\n  • " + errors.join("\n  • "));
+    console.error("UI environment check failed:\n\n  • " + errors.join("\n  • "));
     process.exit(1);
   }
 }

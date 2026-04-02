@@ -3,8 +3,9 @@ import { Wallet } from "ethers";
 import type { ApiKeyCreds } from "@polymarket/clob-client";
 import { cfg } from "../config.js";
 
-let _client: ClobClient | null = null;
 let _publicClient: ClobClient | null = null;
+let _client: ClobClient | null = null;
+let _clientInit: Promise<ClobClient> | null = null;
 
 function getPublicClient(): ClobClient {
   if (!_publicClient) {
@@ -13,22 +14,45 @@ function getPublicClient(): ClobClient {
   return _publicClient;
 }
 
-function getClient(): ClobClient {
-  if (!_client) {
-    if (!cfg.privateKey || !cfg.clobApiKey || !cfg.clobSecret || !cfg.clobPassphrase) {
-      throw new Error(
-        "Live trading disabled: set PRIVATE_KEY, CLOB_API_KEY, CLOB_SECRET, CLOB_PASS_PHRASE"
-      );
+function hasManualClobCreds(): boolean {
+  const k = (cfg.clobApiKey ?? "").trim();
+  const s = (cfg.clobSecret ?? "").trim();
+  const p = (cfg.clobPassphrase ?? "").trim();
+  return Boolean(k && s && p);
+}
+
+async function getClient(): Promise<ClobClient> {
+  if (_client) return _client;
+  if (_clientInit) return _clientInit;
+
+  _clientInit = (async () => {
+    if (!cfg.privateKey?.trim()) {
+      throw new Error("Live trading needs PRIVATE_KEY in .env");
     }
-    const signer = new Wallet(cfg.privateKey);
-    const creds: ApiKeyCreds = {
-      key: cfg.clobApiKey,
-      secret: cfg.clobSecret,
-      passphrase: cfg.clobPassphrase
-    };
+    const signer = new Wallet(cfg.privateKey.trim());
+
+    let creds: ApiKeyCreds;
+    if (hasManualClobCreds()) {
+      creds = {
+        key: cfg.clobApiKey!.trim(),
+        secret: cfg.clobSecret!.trim(),
+        passphrase: cfg.clobPassphrase!.trim()
+      };
+    } else {
+      const l1 = new ClobClient(cfg.clobApiUrl, cfg.clobChainId, signer);
+      creds = await l1.createOrDeriveApiKey();
+    }
+
     _client = new ClobClient(cfg.clobApiUrl, cfg.clobChainId, signer, creds);
+    return _client;
+  })();
+
+  try {
+    return await _clientInit;
+  } catch (e) {
+    _clientInit = null;
+    throw e;
   }
-  return _client;
 }
 
 export type TokenIds = { yesTokenId: string; noTokenId: string };
@@ -56,14 +80,15 @@ export type PlaceOrderParams = {
   orderType?: "GTC" | "FOK" | "FAK";
 };
 
-export type PlaceOrderResult = {  success: boolean;
+export type PlaceOrderResult = {
+  success: boolean;
   orderID?: string;
   status?: string;
   errorMsg?: string;
 };
 
 export async function placeOrder(params: PlaceOrderParams): Promise<PlaceOrderResult> {
-  const client = getClient();
+  const client = await getClient();
   const { tokenId, side, size, price, orderType = "GTC" } = params;
   const sideEnum = side === "BUY" ? Side.BUY : Side.SELL;
 

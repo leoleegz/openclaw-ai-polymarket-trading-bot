@@ -11,8 +11,18 @@ export interface WhaleFlow {
   marketId: string;
   netYesNotional: number;
   grossNotional: number;
+  yesNotional: number;
+  noNotional: number;
   tradeCount: number;
   ts: number;
+  participants?: Array<{
+    wallet: string;
+    yesNotional: number;
+    noNotional: number;
+    netYes: number;
+    gross: number;
+    joinedAt: number;
+  }>;
   topWallets?: Array<{
     wallet: string;
     netYes: number;
@@ -23,11 +33,16 @@ export interface WhaleFlow {
 export interface FeatureVector {
   marketId: string;
   yesPrice: number;
-  returns30s: number;
-  returns2m: number;
-  vol2m: number;
-  whaleBias: number;
-  whaleIntensity: number;
+  emaFast: number;
+  emaSlow: number;
+  emaSignal: number;
+  rsi: number;
+  trendScore: number;
+  winrateWhaleYesPressure: number;
+  winrateWhaleNoPressure: number;
+  winrateWhaleBalance: number;
+  winrateWhaleCount: number;
+  winrateWhaleGross: number;
   ts: number;
 }
 
@@ -36,6 +51,7 @@ export interface Prediction {
   pUp5m: number;
   confidence: number;
   reason: string;
+  side: Side;
   ts: number;
 }
 

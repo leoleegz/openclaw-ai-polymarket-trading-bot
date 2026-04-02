@@ -1,41 +1,80 @@
+import { cfg } from "../config.js";
 import { FeatureVector, MarketTick, WhaleFlow } from "../types/index.js";
 
-export function buildFeatures(ticks: MarketTick[], whale: WhaleFlow): FeatureVector {
+export function buildFeatures(
+  ticks: MarketTick[],
+  whale: WhaleFlow,
+  walletWinrates: Map<string, number>
+): FeatureVector {
   if (ticks.length < 3) throw new Error("Not enough ticks");
   const latest = ticks[ticks.length - 1];
 
-  const pNow = latest.yesPrice;
-  const p30 = ticks[Math.max(0, ticks.length - 4)].yesPrice;
-  const p2m = ticks[Math.max(0, ticks.length - 13)].yesPrice;
+  const prices = ticks.map((t) => t.yesPrice);
+  const emaFast = ema(prices, cfg.emaFast);
+  const emaSlow = ema(prices, cfg.emaSlow);
+  const rsi = calcRsi(prices, cfg.rsiPeriod);
+  const emaSignal = emaSlow === 0 ? 0 : (emaFast - emaSlow) / emaSlow;
 
-  const returns30s = safeRet(pNow, p30);
-  const returns2m = safeRet(pNow, p2m);
+  const rsiNorm = (rsi - 50) / 50;
+  const trendScore = clamp1(0.7 * emaSignal + 0.3 * rsiNorm);
 
-  const window = ticks.slice(Math.max(0, ticks.length - 13));
-  const vol2m = stdev(window.map((t) => t.yesPrice));
+  let yesPressure = 0;
+  let noPressure = 0;
+  let gross = 0;
+  let count = 0;
 
-  const whaleBias = whale.grossNotional > 0 ? whale.netYesNotional / whale.grossNotional : 0;
-  const whaleIntensity = Math.min(1, whale.grossNotional / 5000);
+  for (const p of whale.participants ?? []) {
+    const wr = walletWinrates.get(p.wallet) ?? 0;
+    if (wr < cfg.whaleMinWinrate) continue;
+    yesPressure += p.yesNotional * wr;
+    noPressure += p.noNotional * wr;
+    gross += p.gross;
+    count += 1;
+  }
+  const bal = gross > 0 ? (yesPressure - noPressure) / gross : 0;
 
   return {
     marketId: latest.marketId,
-    yesPrice: pNow,
-    returns30s,
-    returns2m,
-    vol2m,
-    whaleBias,
-    whaleIntensity,
+    yesPrice: latest.yesPrice,
+    emaFast,
+    emaSlow,
+    emaSignal,
+    rsi,
+    trendScore,
+    winrateWhaleYesPressure: yesPressure,
+    winrateWhaleNoPressure: noPressure,
+    winrateWhaleBalance: bal,
+    winrateWhaleCount: count,
+    winrateWhaleGross: gross,
     ts: Date.now()
   };
 }
 
-function safeRet(a: number, b: number) {
-  return b === 0 ? 0 : (a - b) / b;
+function ema(prices: number[], period: number): number {
+  if (!prices.length) return 0;
+  const alpha = 2 / (period + 1);
+  let out = prices[0];
+  for (let i = 1; i < prices.length; i += 1) {
+    out = alpha * prices[i] + (1 - alpha) * out;
+  }
+  return out;
 }
 
-function stdev(arr: number[]) {
-  if (!arr.length) return 0;
-  const m = arr.reduce((s, x) => s + x, 0) / arr.length;
-  const v = arr.reduce((s, x) => s + (x - m) ** 2, 0) / arr.length;
-  return Math.sqrt(v);
+function calcRsi(prices: number[], period: number): number {
+  if (prices.length < 2) return 50;
+  let gain = 0;
+  let loss = 0;
+  const start = Math.max(1, prices.length - period);
+  for (let i = start; i < prices.length; i += 1) {
+    const d = prices[i] - prices[i - 1];
+    if (d > 0) gain += d;
+    else loss += Math.abs(d);
+  }
+  if (loss === 0) return 100;
+  const rs = gain / loss;
+  return 100 - 100 / (1 + rs);
+}
+
+function clamp1(v: number): number {
+  return Math.max(-1, Math.min(1, v));
 }
