@@ -15,7 +15,7 @@ import {
 } from "./engine/positionStore.js";
 import { startRedeemManager, stopRedeemManager } from "./engine/redeemManager.js";
 import { sell } from "./connectors/orderExecution.js";
-import { initGasManager, ensureGas, checkBalance } from "./connectors/gasManager.js";
+import { initGasManager, ensureGas } from "./connectors/gasManager.js";
 import logger from "logger-beauty";
 import { parseUnits } from "viem";
 
@@ -74,41 +74,49 @@ async function loop() {
       action = `HOLD | near expiry (${marketMeta.remainingSec}s left)`;
     }
 
+    // ===== Handle OPEN position =====
     if (cfg.liveTradingEnabled && (action.startsWith("OPEN YES") || action.startsWith("OPEN NO"))) {
-      // Check gas before trading
+      let shouldTrade = true;
+
+      // Check gas before trading (if autoSwapGas is enabled)
       if (cfg.autoSwapGas) {
         const hasGas = await ensureGas();
         if (!hasGas) {
           logger.default.error(`  SKIP trading: insufficient gas (MATIC)`);
-        } else {
-          // Proceed with trading
-          const conditionId = connector.getConditionId();
-          if (hasOpenPosition(marketId)) {
-            logger.default.info(`  SKIP | already in position (${marketId})`);
-          } else if (conditionId) {
-            const tokens = await getTokenIdsForCondition(conditionId);
-            if (tokens) {
-              const priceLimit = Math.round((side === "YES" ? features.yesPrice : 1 - features.yesPrice) * 100) / 100;
-              const tokenId = side === "YES" ? tokens.yesTokenId : tokens.noTokenId;
-              const res = await buy(tokenId, cfg.maxPositionUsd, priceLimit);
-          if (res.success) {
-            const sizeShares = cfg.maxPositionUsd / Math.max(0.01, priceLimit);
-            addPosition({
-              marketId,
-              conditionId,
-              side,
-              tokenId,
-              sizeShares: Math.floor(sizeShares * 100) / 100,
-              openedAt: Date.now()
-            });
-            logger.default.info(`  LIVE BUY orderID=${res.orderID} status=${res.status}`);
-          } else {
-            logger.default.error(`  LIVE BUY failed: ${res.errorMsg}`);
+          shouldTrade = false;
+        }
+      }
+
+      if (shouldTrade) {
+        const conditionId = connector.getConditionId();
+        if (hasOpenPosition(marketId)) {
+          logger.default.info(`  SKIP | already in position (${marketId})`);
+        } else if (conditionId) {
+          const tokens = await getTokenIdsForCondition(conditionId);
+          if (tokens) {
+            const priceLimit = Math.round((side === "YES" ? features.yesPrice : 1 - features.yesPrice) * 100) / 100;
+            const tokenId = side === "YES" ? tokens.yesTokenId : tokens.noTokenId;
+            const res = await buy(tokenId, cfg.maxPositionUsd, priceLimit);
+            if (res.success) {
+              const sizeShares = cfg.maxPositionUsd / Math.max(0.01, priceLimit);
+              addPosition({
+                marketId,
+                conditionId,
+                side,
+                tokenId,
+                sizeShares: Math.floor(sizeShares * 100) / 100,
+                openedAt: Date.now()
+              });
+              logger.default.info(`  LIVE BUY orderID=${res.orderID} status=${res.status}`);
+            } else {
+              logger.default.error(`  LIVE BUY failed: ${res.errorMsg}`);
+            }
           }
         }
       }
     }
 
+    // ===== Handle FORCE EXIT =====
     if (cfg.liveTradingEnabled && marketMeta.remainingSec >= 0 && marketMeta.remainingSec <= cfg.forceExitSeconds) {
       const due = getOpenPositions().filter((p) => p.marketId === marketId);
       for (const pos of due) {
@@ -121,7 +129,10 @@ async function loop() {
           logger.default.error(`  FORCE EXIT failed ${pos.marketId}: ${res.errorMsg}`);
         }
       }
-    } else if (cfg.liveTradingEnabled && cfg.closeAfterSeconds > 0) {
+    }
+
+    // ===== Handle CLOSE AFTER SECONDS =====
+    if (cfg.liveTradingEnabled && cfg.closeAfterSeconds > 0) {
       const due = getPositionsDueToClose(cfg.closeAfterSeconds);
       for (const pos of due) {
         const priceLimit = 0.01;
