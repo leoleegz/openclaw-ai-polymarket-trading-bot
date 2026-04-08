@@ -93,6 +93,55 @@ export function getOpenConditionIds(): string[] {
   return Array.from(positions.keys());
 }
 
+// ===== Compatibility with main.ts =====
+
+export interface LivePosition {
+  marketId: string;
+  conditionId: string;
+  side: "YES" | "NO";
+  tokenId: string;
+  sizeShares: number;
+  openedAt: number;
+}
+
+export function getOpenPositions(): LivePosition[] {
+  return Array.from(positions.values()).map((p) => ({
+    marketId: p.conditionId,
+    conditionId: p.conditionId,
+    side: p.side,
+    tokenId: p.orderID,  // Note: orderID is used as tokenId in main.ts
+    sizeShares: p.amount,
+    openedAt: p.openedAt,
+  }));
+}
+
+export function getPositionsDueToClose(closeAfterSeconds: number): LivePosition[] {
+  const now = Date.now();
+  const cutoff = closeAfterSeconds * 1000;
+  return getOpenPositions().filter((p) => now - p.openedAt >= cutoff);
+}
+
+export function addPosition(pos: {
+  marketId: string;
+  conditionId: string;
+  side: "YES" | "NO";
+  tokenId: string;
+  sizeShares: number;
+  openedAt: number;
+}): void {
+  positions.set(pos.conditionId, {
+    conditionId: pos.conditionId,
+    side: pos.side,
+    entryPrice: 0,  // Not tracked in new model
+    amount: pos.sizeShares,
+    orderID: pos.tokenId,
+    openedAt: pos.openedAt,
+    status: "open",
+  });
+  save();
+  log(`Position added: ${pos.conditionId} ${pos.side} @ ${pos.sizeShares} shares`);
+}
+
 // ===== NEW: Closed Position Management for Auto Redeem =====
 
 /**
