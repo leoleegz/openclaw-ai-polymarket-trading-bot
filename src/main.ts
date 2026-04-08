@@ -22,7 +22,12 @@ import { parseUnits } from "viem";
 validateBotEnv();
 
 const connector = new PolymarketConnector(cfg.polymarketRestBase);
-const llm = new LlmScorer(cfg.openaiApiKey, cfg.openaiBaseUrl, cfg.openaiModel);
+
+// Initialize LLM scorer based on provider
+const llmApiKey = cfg.llmProvider === "minimax" ? cfg.minimaxApiKey : cfg.openaiApiKey;
+const llmModel = cfg.llmProvider === "minimax" ? cfg.minimaxModel : cfg.openaiModel;
+const llm = LlmScorer.createForProvider(cfg.llmProvider, llmApiKey, undefined, llmModel);
+console.log(`[LLM] Initialized with provider: ${cfg.llmProvider}, model: ${llmModel}`);
 
 // Initialize Gas Manager
 if (cfg.autoSwapGas) {
