@@ -34,12 +34,12 @@ if (cfg.autoSwapGas) {
   try {
     initGasManager({
       privateKey: cfg.privateKey as `0x${string}`,
-      rpcUrl: cfg.polymarketRestBase.includes("polygon") ? "https://polygon-rpc.com" : "https://polygon-rpc.com",
+      rpcUrl: cfg.polygonRpcUrl,
       minMaticBalance: parseUnits(cfg.minMaticBalance, 18),
       swapAmountMatic: parseUnits(cfg.swapAmountMatic, 18),
       minUsdcBalance: parseUnits(cfg.minUsdcBalance, 6),
     });
-    console.log("[GasManager] Initialized with auto-swap enabled");
+    console.log(`[GasManager] Initialized with RPC: ${cfg.polygonRpcUrl}`);
   } catch (e) {
     console.error(`[GasManager] Failed to initialize: ${e}`);
   }

@@ -44,6 +44,7 @@ export const cfg = {
 
   // ===== Gas Management =====
   autoSwapGas: Boolean(process.env.AUTO_SWAP_GAS ?? true),
+  polygonRpcUrl: process.env.POLYGON_RPC_URL ?? "https://polygon-rpc.com",
   minMaticBalance: process.env.MIN_MATIC_BALANCE ?? "0.05",   // Stored as string, converted in gasManager
   swapAmountMatic: process.env.SWAP_AMOUNT_MATIC ?? "0.1",
   minUsdcBalance: process.env.MIN_USDC_BALANCE ?? "1",
