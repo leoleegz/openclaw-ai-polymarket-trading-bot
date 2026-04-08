@@ -1,7 +1,6 @@
 import { cfg } from "../config.js";
 import { getClosedPositions, markRedeemed } from "./positionStore.js";
-import { redeemPosition } from "../connectors/orderExecution.js";
-import { getClient } from "../connectors/polymarket.js";
+import { redeemPosition, getClient } from "../connectors/orderExecution.js";
 
 const REDEEM_INTERVAL_MS = cfg.redeemCheckInterval * 1000;
 
