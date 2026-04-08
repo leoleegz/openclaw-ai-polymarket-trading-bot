@@ -21,7 +21,7 @@ function hasManualClobCreds(): boolean {
   return Boolean(k && s && p);
 }
 
-async function getClient(): Promise<ClobClient> {
+export async function getClient(): Promise<ClobClient> {
   if (_client) return _client;
   if (_clientInit) return _clientInit;
 
