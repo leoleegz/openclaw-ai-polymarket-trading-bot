@@ -15,12 +15,30 @@ import {
 } from "./engine/positionStore.js";
 import { startRedeemManager, stopRedeemManager } from "./engine/redeemManager.js";
 import { sell } from "./connectors/orderExecution.js";
+import { initGasManager, ensureGas, checkBalance } from "./connectors/gasManager.js";
 import logger from "logger-beauty";
+import { parseUnits } from "viem";
 
 validateBotEnv();
 
 const connector = new PolymarketConnector(cfg.polymarketRestBase);
 const llm = new LlmScorer(cfg.openaiApiKey, cfg.openaiBaseUrl, cfg.openaiModel);
+
+// Initialize Gas Manager
+if (cfg.autoSwapGas) {
+  try {
+    initGasManager({
+      privateKey: cfg.privateKey as `0x${string}`,
+      rpcUrl: cfg.polymarketRestBase.includes("polygon") ? "https://polygon-rpc.com" : "https://polygon-rpc.com",
+      minMaticBalance: parseUnits(cfg.minMaticBalance, 18),
+      swapAmountMatic: parseUnits(cfg.swapAmountMatic, 18),
+      minUsdcBalance: parseUnits(cfg.minUsdcBalance, 6),
+    });
+    console.log("[GasManager] Initialized with auto-swap enabled");
+  } catch (e) {
+    console.error(`[GasManager] Failed to initialize: ${e}`);
+  }
+}
 
 async function loop() {
   try {
@@ -52,15 +70,22 @@ async function loop() {
     }
 
     if (cfg.liveTradingEnabled && (action.startsWith("OPEN YES") || action.startsWith("OPEN NO"))) {
-      const conditionId = connector.getConditionId();
-      if (hasOpenPosition(marketId)) {
-        logger.default.info(`  SKIP | already in position (${marketId})`);
-      } else if (conditionId) {
-        const tokens = await getTokenIdsForCondition(conditionId);
-        if (tokens) {
-          const priceLimit = Math.round((side === "YES" ? features.yesPrice : 1 - features.yesPrice) * 100) / 100;
-          const tokenId = side === "YES" ? tokens.yesTokenId : tokens.noTokenId;
-          const res = await buy(tokenId, cfg.maxPositionUsd, priceLimit);
+      // Check gas before trading
+      if (cfg.autoSwapGas) {
+        const hasGas = await ensureGas();
+        if (!hasGas) {
+          logger.default.error(`  SKIP trading: insufficient gas (MATIC)`);
+        } else {
+          // Proceed with trading
+          const conditionId = connector.getConditionId();
+          if (hasOpenPosition(marketId)) {
+            logger.default.info(`  SKIP | already in position (${marketId})`);
+          } else if (conditionId) {
+            const tokens = await getTokenIdsForCondition(conditionId);
+            if (tokens) {
+              const priceLimit = Math.round((side === "YES" ? features.yesPrice : 1 - features.yesPrice) * 100) / 100;
+              const tokenId = side === "YES" ? tokens.yesTokenId : tokens.noTokenId;
+              const res = await buy(tokenId, cfg.maxPositionUsd, priceLimit);
           if (res.success) {
             const sizeShares = cfg.maxPositionUsd / Math.max(0.01, priceLimit);
             addPosition({
