@@ -166,3 +166,6 @@ export function cleanupOldClosed(keepCount: number = 100): void {
 function log(msg: string): void {
   console.log(`[PositionStore] ${msg}`);
 }
+
+// ===== Compatibility aliases for main.ts =====
+export const hasOpenPosition = hasPosition;
