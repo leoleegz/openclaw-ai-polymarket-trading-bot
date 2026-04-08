@@ -157,3 +157,28 @@ export async function sell(
     orderType: "FOK"
   });
 }
+
+// ===== Auto Redeem =====
+
+export async function redeemPosition(
+  conditionId: string,
+  orderID: string
+): Promise<{ success: boolean; result?: unknown; error?: string }> {
+  try {
+    const client = await getClient();
+    console.log(`[OrderExecution] Redeeming position: condition=${conditionId} order=${orderID}`);
+
+    // Call Polymarket CLOB redeem function
+    const result = await client.redeemPositions({
+      conditionId,
+      orderId: orderID,
+    });
+
+    console.log(`[OrderExecution] Redeem successful: ${JSON.stringify(result)}`);
+    return { success: true, result };
+  } catch (e) {
+    const error = e instanceof Error ? e.message : String(e);
+    console.error(`[OrderExecution] Redeem failed: ${error}`);
+    return { success: false, error };
+  }
+}

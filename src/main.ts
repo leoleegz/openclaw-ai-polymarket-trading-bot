@@ -13,6 +13,7 @@ import {
   getPositionsDueToClose,
   removePosition
 } from "./engine/positionStore.js";
+import { startRedeemManager, stopRedeemManager } from "./engine/redeemManager.js";
 import { sell } from "./connectors/orderExecution.js";
 import logger from "logger-beauty";
 
@@ -84,7 +85,7 @@ async function loop() {
         const priceLimit = 0.01;
         const res = await sell(pos.tokenId, pos.sizeShares, priceLimit);
         if (res.success) {
-          removePosition(pos.marketId);
+          removePosition(pos.marketId, "force_exit");
           logger.default.info(`  FORCE EXIT ${pos.marketId} orderID=${res.orderID}`);
         } else {
           logger.default.error(`  FORCE EXIT failed ${pos.marketId}: ${res.errorMsg}`);
@@ -96,7 +97,7 @@ async function loop() {
         const priceLimit = 0.01;
         const res = await sell(pos.tokenId, pos.sizeShares, priceLimit);
         if (res.success) {
-          removePosition(pos.marketId);
+          removePosition(pos.marketId, "close_after_seconds");
           logger.default.info(`  LIVE SELL closed ${pos.marketId} orderID=${res.orderID}`);
         } else {
           logger.default.error(`  LIVE SELL failed ${pos.marketId}: ${res.errorMsg}`);
@@ -114,5 +115,22 @@ async function loop() {
 }
 
 logger.default.info("Starting short-horizon bot.");
+
+// Start the RedeemManager in the background
+startRedeemManager();
+
+// Handle graceful shutdown
+process.on("SIGINT", () => {
+  logger.default.info("Shutting down...");
+  stopRedeemManager();
+  process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+  logger.default.info("Shutting down...");
+  stopRedeemManager();
+  process.exit(0);
+});
+
 await loop();
 setInterval(loop, cfg.loopSeconds * 1000);

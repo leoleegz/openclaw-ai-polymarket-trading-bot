@@ -27,5 +27,11 @@ export const cfg = {
   clobSecret: process.env.CLOB_SECRET,
   clobPassphrase: process.env.CLOB_PASS_PHRASE,
   liveTradingEnabled: Boolean(process.env.PRIVATE_KEY?.trim()),
-  closeAfterSeconds: Number(process.env.CLOSE_AFTER_SECONDS ?? 0)
+  closeAfterSeconds: Number(process.env.CLOSE_AFTER_SECONDS ?? 0),
+
+  // ===== Market Duration (5 or 15 minutes) =====
+  btcMarketDuration: Number(process.env.BTC_MARKET_DURATION ?? 5),
+
+  // ===== Auto Redeem =====
+  redeemCheckInterval: Number(process.env.REDEEM_CHECK_INTERVAL_SEC ?? 30),
 };
